@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
+from cmath import nan
 from datetime import datetime
-
-import requests
 import json
 
+import requests
 
 def transform_weight(weight):
     """
@@ -69,6 +69,78 @@ class WeightGurus:
         self.__do_login()
         weight_data = self.__get_weight_history()
         return json.dumps(weight_data['operations'][-1])
+    
+    def get_unremoved_entries(self):
+        self.__do_login()
+        operations = self.__get_weight_history()["operations"]
+        operations = self._clean_operations(operations)
+        return json.dumps(operations, indent=4, sort_keys=True)
+
+
+    @staticmethod
+    def _clean_operations(operations: list):
+        operations = WeightGurus._remove_deleted_operations(operations)
+        return operations
+
+    @staticmethod
+    def _remove_deleted_operations(operations):
+        for index, operation in enumerate(operations):
+            if operation["operationType"] == "delete":
+                deleted_operation = operations.pop(index)
+                operations = WeightGurus._remove_operation_deleted(
+                    operations, deleted_operation
+                )
+
+        return operations
+
+    @staticmethod
+    def _remove_operation_deleted(operations, deleted_operation):
+        for index, current_operation in enumerate(operations):
+            if WeightGurus._is_deleted_operation(current_operation, deleted_operation):
+                operations.pop(index)
+
+        return operations
+
+    @staticmethod
+    def _is_deleted_operation(current_operation, deleted_operation):
+        if (
+            WeightGurus._is_operation_earlier(current_operation, deleted_operation)
+            and current_operation["weight"] == deleted_operation["weight"]
+        ):
+            return True
+
+        return False
+
+    @staticmethod
+    def _is_operation_earlier(current_operation, deleted_operation):
+        current_date = datetime.fromisoformat(
+            current_operation["serverTimestamp"].replace("Z", "+00:00")
+        )
+        deleted_date = datetime.fromisoformat(
+            deleted_operation["serverTimestamp"].replace("Z", "+00:00")
+        )
+        return current_date < deleted_date
+
+    @staticmethod
+    def _wg_num_to_float(number):
+        number = str(number)
+        if len(number) <= 1:
+            raise Exception(
+                "Unsure of how weight guru handles numbers this small"
+            )
+
+        try:
+            whole_number = int(number[:-1])
+        except ValueError:
+            return nan
+
+        try:
+            decimal_point = int(number[-1]) / 10
+        except ValueError:
+            return nan
+
+        return whole_number + decimal_point
+
 
     def manual_entry(self, weight, bmi=None, body_fat=None, muscle_mass=None, water=None):
         """
@@ -106,5 +178,5 @@ class WeightGurus:
 
 
 if __name__ == "__main__":
-    weight_gurus = WeightGurus('username', 'password')
+    weight_gurus = WeightGurus('username', 'password!')
     weight_gurus.get_all()
